@@ -1,0 +1,185 @@
+---
+title: "Introducing Bayesian Data Analysis Using R"
+author: |
+  | Mark Andrews
+  | Psychology Department, Nottingham Trent University
+  | 
+  | \faEnvelopeO\  ```mark.andrews@ntu.ac.uk```
+  | \faTwitter\ ```@xmjandrews```
+  | \faGithub\ ```https://github.com/lawsofthought/notts_rmeetup-jul2018```
+date: "July 25, 2018"
+fontsize: 10pt
+output:
+ beamer_presentation:
+  keep_tex: true
+  fonttheme: "serif"
+  includes:
+   in_header: slides_preamble.tex
+
+---
+
+```{r setup, include=FALSE, message=FALSE, cache=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+library(rstan)
+library(tidyverse)
+library(coda)
+library(bayesplot)
+
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+
+set.seed(101)
+
+N <- 50
+a <- 0.5
+b <- 2.25
+Df <- tibble(x = rnorm(N),
+             y = a + b *x + rnorm(N, mean=0, sd = 1.75)
+)
+
+ggplot(Df, 
+       mapping = aes(x = x, y = y)) + 
+  geom_point() +
+  stat_smooth(method='lm') +
+  theme_classic()
+
+M <- lm(y ~ x, data=Df)
+
+model_data <- list(N = N, 
+                   y = Df$y, 
+                   x = Df$x)
+
+
+
+```
+
+## Bayesian data analysis
+
+* Bayesian statistics is an alternative school of statistics to the *classical* or *frequentist* or school.
+* Classical statistics is defined by concepts like *sampling distributions*, *(null) hypothesis significance tests*, *confidence intervals*, etc. 
+* These concepts per se do not exist in Bayesian approaches to statistics (though there are analogous concepts).
+* Bayesian statistics arguably originated with a single essay by Reverend Thomas Bayes in 1763, though Bayes's main idea was independently discovered and developed much further by Pierre-Simon Laplace at the end of the \nth{18} century.
+* With the origin of frequentist approaches to statistics in the early \nth{20} century, Bayesian method were sidelined.
+* Beginning in the late \nth{20} century, Bayesian methods have regained popularity.
+
+## Bayesian methods: A definition
+
+* Classical and Bayesian approaches to data analysis both begin by positing a probabilistic *generative model* of the data being analysed.
+* For example, if our data was $x_1, x_2 \ldots x_n$, we might assume or propose that this data arose from the following process:
+$$
+x_i \sim N(\mu, \sigma^2), \quad \text{for $i \in 1 \ldots n$},
+$$
+where $\mu$ and $\sigma^2$ are the fixed but unknown mean and variance of a Normal distribution.
+* The fundamental difference between classical and Bayesian methods are that Bayesian methods describes our state of uncertainty about $\mu$ and $\sigma^2$ by a probability distribution (known as *priors*).
+* In general, all unknown variables in the probabilistic are described by priors.
+
+
+## Posterior distributions
+
+* In general, given observed data $D$ and a model $\Omega$, the posterior distribution over the parameters $\theta$ of the model is
+		$$
+			\Prob{\theta\given D, \Omega}
+			= \frac{\overbrace{\Prob{D\given\theta}}^{\text{Likelihood}}\overbrace{\Prob{\theta\given\Omega}}^{\text{Prior}}}
+			{\underbrace{\int\Prob{D\given\theta}\Prob{\theta\given\Omega}\ d\theta}_{\text{Marginal likelihood}}}.
+		$$
+		where the *marginal likelihood* gives the likelihood of the model given the observed data.
+
+* Given the posterior distribution $\Prob{\theta\given D, \Omega}$, our aim is often to characterise this distribution in terms of e.g. its mean, variance, etc. 
+
+* Likewise, we may aim to calculate \emph{posterior predictive} distributions such as 
+		$$
+			\Prob{x_{\text{new}} \given D, \Omega} = \int\Prob{x_{\text{new}}\given\theta,\Omega}\Prob{\theta\given D, \Omega}\ d\theta.
+		$$
+		
+## Sampling from posterior distributions
+
+* In only rare situations can we determine the characteristics of the posterior distribution, or calculate posterior predictive distributions, in closed form.
+* However, in general, if we can draw samples from $\Prob{\theta\given D, \Omega}$ then we can approximate, e.g., the mean of the distribution by
+			$$
+				\langle\theta\rangle = \int\theta\Prob{\theta\given D, \Omega} \approx \frac{1}{N} \sum_{i=1}^N \tilde{\theta}_i,
+			$$
+		or the posterior predictive distribution by 
+		$$
+			\Prob{x_{\text{new}} \given D, \Omega} = \int\Prob{x_{\text{new}}\given\theta,\Omega}\Prob{\theta\given D, \Omega}\ d\theta
+			\approx \frac{1}{N} \sum_{i=1}^N \Prob{x_{\text{new}}\given\tilde{\theta}_i,\Omega},
+		$$
+		where 
+		$$
+		\tilde{\theta}_1, \tilde{\theta}_2 \ldots \tilde{\theta}_N
+		$$
+		are samples from $\Prob{\theta\given D, \Omega}$.
+		
+## Markov Chain Monte Carlo (MCMC)
+
+* Markov Chain Monte Carlo (MCMC) methods provide with general purpose methods for drawing samples from the posterior distributions of Bayesian models.
+* Until recently the two most widely used MCMC methods were
+    - Metropolis Hastings
+    - Gibbs sampling
+* More recently Hamiltonian Monte Carlo (HMC) has become very popular.
+
+## Probabilistic programming languages
+
+* The most general purpose approach to Bayesian data analysis is to use a *probabilistic programming language* like
+    - Bugs 
+    - Jags
+    - PyMC
+    - Stan
+    
+* In all these case, your work entails defining your probabilistic model, including priors, and then a MCMC sampling algorithm is compiled. 
+
+## Using Stan
+
+* We define a probabilistic model in Stan as follows:
+
+```
+...
+transformed parameters {
+  vector[N] mu;
+  mu = a + b * x;
+}
+
+model {  
+  a ~ normal(0, 10);
+  b ~ normal(0, 10);
+  sigma ~ cauchy(0, 5);
+  y ~ normal(mu, sigma);
+}
+```
+
+## Call Stan from R
+
+```{r, cache=TRUE, results='hide'}
+M_stan <- stan(file="regression.stan",
+               data = model_data,
+               pars = c('a', 'b', 'sigma'),
+               warmup = 5000,
+               iter=10000)
+```
+
+* Here, `model_data` is artificial data with $N=50$ data points and where the true values of the parameters were: $a=0.5$, $b=2.25$, $\sigma=1.75$.
+
+## Summarize 
+
+```{r}
+S <- rstan::summary(M_stan)
+pander::pander(S$summary)
+```
+
+## Visualize
+
+```{r, message=FALSE}
+rstan::plot(M_stan)
+```
+
+## Visualize
+
+```{r, message=FALSE}
+rstan::stan_hist(M_stan)
+```
+
+
+## Conclusions
+
+* Bayesian methods are vital where you need to build complex probabilistic models.
+* In general, inference is based on MCMC sampling.
+* Probabilistic modelling language like Stan make this easy and efficient. 
